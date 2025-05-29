@@ -1,135 +1,84 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase/firebaseConfig';
-import { onAuthStateChanged } from 'firebase/auth';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  ScrollView, ActivityIndicator
+} from 'react-native';
 
-
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ-:.\' '.split('');
 const MAX_ATTEMPTS = 5;
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ-:\' '.split('');
 
-export default function JuegoPokemon() {
-  const [pokemonName, setPokemonName] = useState('');
-  const [pokemonImage, setPokemonImage] = useState('');
-  const [pokemonId, setPokemonId] = useState('');
+export default function JuegoPersonajes() {
+  const [characterName, setCharacterName] = useState('');
+  const [characterInfo, setCharacterInfo] = useState({});
   const [guessedLetters, setGuessedLetters] = useState([]);
   const [wrongGuesses, setWrongGuesses] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [userWin, setUserWin] = useState(0);
-  const [userLose, setUserLose] = useState(0);
-  const [uid, setUid] = useState(null); // Agrega estado uid correctamente
-
-  // Escuchar el login del usuario
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUid(user.uid);
-      }
-    });
-    return unsubscribe;
+    getRandomCharacter();
   }, []);
 
- // Obtener datos del usuario
-  useEffect(() => {
-    if (!uid) return;
-    const traerDatos = async () => {
-      const docRef = doc(db, 'usuarios', uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserWin(data.ganados || 0);
-        setUserLose(data.perdidos || 0);
-      } else {
-        await setDoc(docRef, { ganados: 0, perdidos: 0 }); // inicializar si no existe
-        setUserWin(0);
-        setUserLose(0);
-      }
-      setLoading(false);
-    };
-    traerDatos();
-  }, [uid]);
-
-  const guardarResultado = async (acierto) => {
-    if (!uid) return;
-    const fecha = new Date().toISOString();
-
-    const resultado = {
-      uid,
-      pokemon: pokemonName,
-      aciertos: acierto ? 1 : 0,
-      errores: acierto ? 0 : 1,
-      fecha,
-    };
-
+  const getRandomCharacter = async () => {
+    setLoading(true);
     try {
-      // Guardar resultado individual
-      await setDoc(doc(db, 'resultados', `${uid}_${fecha}`), resultado);
+      const id = Math.floor(Math.random() * 82) + 1;
+      const res = await fetch(`https://swapi.py4e.com/api/people/${id}`);
+      const data = await res.json();
 
-      // Actualizar campos ganados/perdidos del usuario
-      const docRef = doc(db, 'usuarios', uid);
-      await updateDoc(docRef, {
-        ganados: acierto ? userWin + 1 : userWin,
-        perdidos: !acierto ? userLose + 1 : userLose,
+      if (!data.name) return getRandomCharacter(); // inválido, intenta otro
+
+      let homeworldName = '';
+      try {
+        const homeworldRes = await fetch(data.homeworld);
+        const homeworldData = await homeworldRes.json();
+        homeworldName = homeworldData.name;
+      } catch (e) {
+        homeworldName = 'Desconocido';
+      }
+
+      setCharacterName(data.name.toUpperCase());
+      setCharacterInfo({
+        gender: data.gender,
+        height: data.height,
+        birthYear: data.birth_year,
+        eyeColor: data.eye_color,
+        homeworld: homeworldName,
       });
-    } catch (e) {
-      console.error('Error al guardar resultado:', e);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error al obtener personaje:', error);
+      setLoading(false);
     }
   };
-  
 
-  useEffect(() => {
-    const getRandomPokemon = async () => {
-      const id = Math.floor(Math.random() * 1025) + 1;
-      try {
-        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-        const data = await response.json();
-        setPokemonName(data.name.toUpperCase());
-        setPokemonId(data.id);
-        setPokemonImage(
-          `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
-        );
-        setLoading(false);
-      } catch (err) {
-        console.error('Error al obtener el Pokémon:', err);
-      }
-    };
-    getRandomPokemon();
-  }, []);
-
-
-  const handleLetterClick = async (letter) => {
+  const handleLetterClick = (letter) => {
     if (guessedLetters.includes(letter) || gameOver || gameWon) return;
 
     const updatedGuessed = [...guessedLetters, letter];
     setGuessedLetters(updatedGuessed);
 
-    if (!pokemonName.includes(letter)) {
+    if (!characterName.includes(letter)) {
       const newWrongGuesses = wrongGuesses + 1;
       setWrongGuesses(newWrongGuesses);
       if (newWrongGuesses >= MAX_ATTEMPTS) {
         setGameOver(true);
-        setUserLose(userLose + 1)
-        await guardarResultado(false);
       }
     } else {
-      const allCorrect = pokemonName
+      const allCorrect = characterName
         .split('')
-        .every((l) => updatedGuessed.includes(l));
+        .every((l) => updatedGuessed.includes(l) || l === ' ');
       if (allCorrect) {
         setGameWon(true);
-        setUserWin(userWin + 1)
-        await guardarResultado(true);
       }
     }
   };
 
   const renderWord = () =>
-    pokemonName.split('').map((letter, index) => (
+    characterName.split('').map((letter, index) => (
       <Text key={index} style={styles.letter}>
-        {guessedLetters.includes(letter) || gameOver || gameWon ? letter : '_'}
+        {guessedLetters.includes(letter) || gameOver || gameWon || letter === ' ' ? letter : '_'}
       </Text>
     ));
 
@@ -138,34 +87,26 @@ export default function JuegoPokemon() {
     setWrongGuesses(0);
     setGameOver(false);
     setGameWon(false);
-    setLoading(true);
-    setPokemonName('');
-    setPokemonId('');
-    setPokemonImage('');
-    // vuelve a buscar un Pokémon nuevo
-    const id = Math.floor(Math.random() * 1025) + 1;
-    fetch(`https://pokeapi.co/api/v2/pokemon/${id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setPokemonName(data.name.toUpperCase());
-        setPokemonId(data.id);
-        setPokemonImage(
-          `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
-        );
-        setLoading(false);
-      });
+    setCharacterName('');
+    setCharacterInfo({});
+    getRandomCharacter();
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Adivina el Pokémon</Text>
-      <Text style={styles.stats}>Ganados: {userWin} | Perdidos: {userLose}</Text>
+      <Text style={styles.title}>Adivina el Personaje de Star Wars</Text>
+
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (
         <>
-          <Text>{pokemonId}</Text>
-          <Image source={{ uri: pokemonImage }} style={styles.image} />
+          <Text style={styles.hintTitle}>🔍 Pistas:</Text>
+          <Text>👁 Color de ojos: {characterInfo.eyeColor}</Text>
+          <Text>🚻 Género: {characterInfo.gender}</Text>
+          <Text>📏 Altura: {characterInfo.height} cm</Text>
+          <Text>🎂 Año de nacimiento: {characterInfo.birthYear}</Text>
+          <Text>🌍 Planeta natal: {characterInfo.homeworld}</Text>
+
           <View style={styles.wordContainer}>{renderWord()}</View>
 
           <View style={styles.keyboard}>
@@ -189,7 +130,7 @@ export default function JuegoPokemon() {
           </Text>
 
           {gameOver && (
-            <Text style={styles.lost}>💀 ¡Perdiste! Era: {pokemonName}</Text>
+            <Text style={styles.lost}>💀 ¡Perdiste! Era: {characterName}</Text>
           )}
           {gameWon && <Text style={styles.won}>🎉 ¡Ganaste!</Text>}
 
@@ -207,8 +148,7 @@ export default function JuegoPokemon() {
 const styles = StyleSheet.create({
   container: { padding: 20, alignItems: 'center' },
   title: { fontSize: 24, marginBottom: 10 },
-  image: { width: 150, height: 150, marginVertical: 10 },
-  stats: { marginBottom: 10, fontSize: 16 },
+  hintTitle: { fontWeight: 'bold', fontSize: 18, marginVertical: 10 },
   wordContainer: { flexDirection: 'row', marginBottom: 20, flexWrap: 'wrap' },
   letter: { fontSize: 28, marginHorizontal: 4 },
   keyboard: {
@@ -225,9 +165,7 @@ const styles = StyleSheet.create({
     width: 40,
     alignItems: 'center',
   },
-  keyDisabled: {
-    backgroundColor: '#ccc',
-  },
+  keyDisabled: { backgroundColor: '#ccc' },
   attempts: { fontSize: 16, marginBottom: 10 },
   lost: { color: 'red', fontSize: 18 },
   won: { color: 'green', fontSize: 18 },
